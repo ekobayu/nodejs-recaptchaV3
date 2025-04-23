@@ -6,7 +6,7 @@ app.use(express.urlencoded({ extended: true }))
 
 app.post('/submit-form', async (req, res) => {
   const token = req.body['g-recaptcha-response']
-  const secret = '6LfPKhorAAAAABgwvgW5s1AWOVZz7PWDitHiH0CK'
+  const secret = 'your-key'
 
   const response = await axios.post(
     `https://www.google.com/recaptcha/api/siteverify?secret=${secret}&response=${token}`
