@@ -1,76 +1,46 @@
 const axios = require('axios')
+const FormData = require('form-data')
 
 module.exports = async (req, res) => {
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Credentials', true)
-  res.setHeader('Access-Control-Allow-Origin', 'https://bullseye-bali-website.webflow.io')
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-  res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With, Content-Type, Accept')
+  res.setHeader('Access-Control-Allow-Origin', '*') // Or your specific domain
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
   // Handle preflight OPTIONS request
   if (req.method === 'OPTIONS') {
-    return res.status(200).end()
+    res.status(200).end()
+    return
   }
-
-  console.log('Request received:', {
-    method: req.method,
-    headers: req.headers,
-    body: typeof req.body === 'object' ? 'Object received' : 'No body or invalid format'
-  })
 
   // Ensure this is a POST request
   if (req.method !== 'POST') {
     return res.status(405).json({
       success: false,
-      message: 'Method not allowed',
-      method: req.method
+      message: 'Method not allowed'
     })
   }
 
   try {
-    // Check if body exists and is properly parsed
-    if (!req.body || typeof req.body !== 'object') {
-      return res.status(400).json({
-        success: false,
-        message: 'Request body is empty or not properly formatted',
-        receivedBody: req.body
-      })
-    }
-
-    console.log('Request body keys:', Object.keys(req.body))
-
-    const token = req.body['g-recaptcha-response']
+    // Extract form data and metadata
+    const { 'g-recaptcha-response': token, _formName, _formId, _siteId, _redirect, _source, ...formFields } = req.body
 
     // Verify the token is present
     if (!token) {
       return res.status(400).json({
         success: false,
-        message: 'reCAPTCHA token is missing',
-        receivedKeys: Object.keys(req.body)
-      })
-    }
-
-    console.log('reCAPTCHA token received (first 10 chars):', token.substring(0, 10) + '...')
-
-    // Check if RECAPTCHA_SECRET_KEY is set
-    if (!process.env.RECAPTCHA_SECRET_KEY) {
-      console.error('RECAPTCHA_SECRET_KEY environment variable is not set')
-      return res.status(500).json({
-        success: false,
-        message: 'Server configuration error'
+        message: 'reCAPTCHA token is missing'
       })
     }
 
     // Verify the reCAPTCHA token with Google
-    console.log('Verifying token with Google reCAPTCHA API...')
     const recaptchaResponse = await axios.post('https://www.google.com/recaptcha/api/siteverify', null, {
       params: {
         secret: process.env.RECAPTCHA_SECRET_KEY,
         response: token
       }
     })
-
-    console.log('Google reCAPTCHA API response:', recaptchaResponse.data)
 
     const { success, score } = recaptchaResponse.data
 
@@ -79,23 +49,60 @@ module.exports = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'reCAPTCHA verification failed',
-        recaptchaResponse: recaptchaResponse.data
+        score: score
       })
     }
 
-    // Return success response
+    // reCAPTCHA validation passed, now submit to Webflow
+    console.log('reCAPTCHA validation successful, submitting to Webflow')
+
+    // Create form data for Webflow submission
+    const formData = new FormData()
+
+    // Add all form fields
+    Object.entries(formFields).forEach(([key, value]) => {
+      formData.append(key, value)
+    })
+
+    // Add required Webflow fields
+    formData.append('name', _formName)
+    formData.append('source', _source)
+    formData.append('test', false)
+    formData.append('dolphin', false)
+
+    // Determine the Webflow endpoint
+    const siteId = _siteId || 'bullseye-bali-website'
+    const webflowEndpoint = `https://webflow.com/api/v1/form/${siteId}`
+
+    console.log(`Submitting to Webflow endpoint: ${webflowEndpoint}`)
+
+    // Submit to Webflow
+    const webflowResponse = await axios.post(webflowEndpoint, formData, {
+      headers: {
+        ...formData.getHeaders(),
+        Origin: 'https://bullseye-bali-website.webflow.io'
+      }
+    })
+
+    console.log('Webflow response:', webflowResponse.data)
+
+    // Return success response with redirect if available
     return res.status(200).json({
       success: true,
-      message: 'reCAPTCHA validation successful',
-      score: score
+      message: 'Form submitted successfully',
+      redirect: _redirect || webflowResponse.data?.redirect || null
     })
   } catch (error) {
-    console.error('Error validating reCAPTCHA:', error)
-    return res.status(500).json({
+    console.error('Error processing form:', error)
+
+    // Provide detailed error information
+    const errorMessage = error.response?.data?.err || error.message || 'Unknown error'
+    const statusCode = error.response?.status || 500
+
+    return res.status(statusCode).json({
       success: false,
-      message: 'Server error',
-      error: error.message,
-      stack: error.stack
+      message: `Error: ${errorMessage}`,
+      details: error.response?.data || null
     })
   }
 }
