@@ -4,7 +4,7 @@ const FormData = require('form-data')
 module.exports = async (req, res) => {
   // Set CORS headers
   res.setHeader('Access-Control-Allow-Credentials', true)
-  res.setHeader('Access-Control-Allow-Origin', '*') // Or your specific domain
+  res.setHeader('Access-Control-Allow-Origin', 'https://bullseye-bali-website.webflow.io') // Or your specific domain
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
 
