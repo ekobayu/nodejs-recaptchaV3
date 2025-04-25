@@ -22,9 +22,6 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // Log the received body for debugging
-    console.log('Received body:', req.body)
-
     // Check if body exists
     if (!req.body) {
       return res.status(400).json({
@@ -39,8 +36,7 @@ module.exports = async (req, res) => {
     if (!token) {
       return res.status(400).json({
         success: false,
-        message: 'reCAPTCHA token is missing',
-        receivedData: req.body
+        message: 'reCAPTCHA token is missing'
       })
     }
 
@@ -52,8 +48,6 @@ module.exports = async (req, res) => {
       }
     })
 
-    console.log('reCAPTCHA response:', recaptchaResponse.data)
-
     const { success, score } = recaptchaResponse.data
 
     // Check if verification was successful and score is acceptable
@@ -61,15 +55,16 @@ module.exports = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'reCAPTCHA verification failed',
-        recaptchaData: recaptchaResponse.data
+        score: score
       })
     }
 
-    // Process the form data here
-    console.log('Form data:', formData)
-
     // Return success response
-    return res.status(200).json({ success: true, message: 'Form submitted successfully' })
+    return res.status(200).json({
+      success: true,
+      message: 'reCAPTCHA validation successful',
+      score: score
+    })
   } catch (error) {
     console.error('Error validating reCAPTCHA:', error)
     return res.status(500).json({
