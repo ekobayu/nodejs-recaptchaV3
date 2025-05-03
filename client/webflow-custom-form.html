@@ -1,0 +1,284 @@
+<script async src="https://www.google.com/recaptcha/api.js?render=YOUR-RECAPTCHA-SITE-KEY"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    // Find the form
+    const form = document.querySelector('form')
+
+    if (!form) return
+
+    // Find success and error messages
+    const successDiv = document.querySelector('.w-form-done')
+    const errorDiv = document.querySelector('.w-form-fail')
+
+    // Hide both messages initially
+    if (successDiv) successDiv.style.display = 'none'
+    if (errorDiv) errorDiv.style.display = 'none'
+
+    // CRITICAL: Completely disable Webflow's form handling
+    // 1. Clone the form to remove all event listeners
+    const newForm = form.cloneNode(true)
+    form.parentNode.replaceChild(newForm, form)
+
+    // 2. Remove Webflow's form attributes
+    newForm.removeAttribute('data-wf-page')
+    newForm.removeAttribute('data-wf-element')
+
+    // 3. Change the form action to prevent default submission
+    const originalAction = newForm.getAttribute('action')
+    newForm.setAttribute('action', 'javascript:void(0);')
+
+    // 4. Store original form data for later use
+    const formName = newForm.getAttribute('data-name') || ''
+    const redirect = newForm.getAttribute('data-redirect') || ''
+    const pageId = newForm.getAttribute('data-wf-page-id') || ''
+    const elementId = newForm.getAttribute('data-wf-element-id') || ''
+
+    // Add our custom submission handler
+    newForm.addEventListener('submit', function (e) {
+      // Always prevent default submission
+      e.preventDefault()
+
+      // Hide both messages at the start
+      if (successDiv) successDiv.style.display = 'none'
+      if (errorDiv) errorDiv.style.display = 'none'
+
+      // Validate all required fields
+      const requiredFields = newForm.querySelectorAll('[required]')
+      let hasEmptyFields = false
+      let firstEmptyField = null
+
+      // Remove any existing error messages
+      const existingErrorMessages = newForm.querySelectorAll('.field-error-message')
+      existingErrorMessages.forEach((message) => message.remove())
+
+      // Check each required field
+      requiredFields.forEach((field) => {
+        // Remove any existing error styling
+        field.classList.remove('field-error')
+
+        if (!field.value.trim()) {
+          hasEmptyFields = true
+
+          // Add error styling
+          field.classList.add('field-error')
+
+          // Create error message
+          const errorMessage = document.createElement('div')
+          errorMessage.className = 'field-error-message'
+          errorMessage.textContent = 'This field is required'
+          errorMessage.style.color = 'red'
+          errorMessage.style.fontSize = '12px'
+          errorMessage.style.marginTop = '5px'
+
+          // Insert error message after the field
+          field.parentNode.insertBefore(errorMessage, field.nextSibling)
+
+          // Store first empty field for focus
+          if (!firstEmptyField) {
+            firstEmptyField = field
+          }
+        }
+
+        // Email validation for email fields
+        if (field.type === 'email' && field.value.trim()) {
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+          if (!emailRegex.test(field.value.trim())) {
+            hasEmptyFields = true
+
+            // Add error styling
+            field.classList.add('field-error')
+
+            // Create error message
+            const errorMessage = document.createElement('div')
+            errorMessage.className = 'field-error-message'
+            errorMessage.textContent = 'Please enter a valid email address'
+            errorMessage.style.color = 'red'
+            errorMessage.style.fontSize = '12px'
+            errorMessage.style.marginTop = '5px'
+
+            // Insert error message after the field
+            field.parentNode.insertBefore(errorMessage, field.nextSibling)
+
+            // Store first empty field for focus
+            if (!firstEmptyField) {
+              firstEmptyField = field
+            }
+          }
+        }
+      })
+
+      // Focus on the first empty field
+      if (firstEmptyField) {
+        firstEmptyField.focus()
+        return false
+      }
+
+      // If validation fails, stop here
+      if (hasEmptyFields) {
+        showError('Please fill in all required fields correctly.')
+        return false
+      }
+
+      // Show loading state
+      const submitButton = newForm.querySelector('input[type="submit"]')
+      const originalButtonText = submitButton.value
+      submitButton.value = 'Validating...'
+      submitButton.disabled = true
+
+      // Execute reCAPTCHA validation
+      grecaptcha.ready(function () {
+        // Define a variable to store the token outside the promise chain
+        let captchaToken
+
+        grecaptcha
+          .execute('YOUR-RECAPTCHA-SITE-KEY', { action: 'submit' })
+          .then(function (token) {
+            // Store the token in our variable
+            captchaToken = token
+
+            // Create form data object
+            const formData = new FormData(newForm)
+            const formObject = {}
+            formData.forEach((value, key) => {
+              formObject[key] = value
+            })
+
+            // Add reCAPTCHA token
+            formObject['g-recaptcha-response'] = captchaToken
+
+            // Log what we're sending
+            console.log('Sending data for validation:', formObject)
+
+            // Send to Vercel function for validation
+            return fetch('https://nodejs-recaptcha-v3.vercel.app/api/submit-form', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify(formObject)
+            })
+          })
+          .then((response) => {
+            console.log('Response status:', response.status)
+            return response.json()
+          })
+          .then((data) => {
+            console.log('Validation response:', data)
+
+            // Reset button state
+            submitButton.value = originalButtonText
+            submitButton.disabled = false
+
+            if (data.success) {
+              // reCAPTCHA validation passed - manually submit to Webflow
+              console.log('reCAPTCHA validation successful, submitting to Webflow')
+
+              const siteId = document.documentElement.getAttribute('data-wf-site')
+
+              // Method 1: Use Webflow's AJAX endpoint
+              const webflowEndpoint = 'https://webflow.com/api/v1/form/' + siteId
+
+              // Create JSON data for Webflow
+              const webflowData = {
+                name: formName,
+                pageId: pageId,
+                elementId: elementId,
+                source: window.location.href,
+                test: false,
+                dolphin: false,
+                'g-recaptcha-response': captchaToken,
+                fields: {}
+              }
+
+              // Add form fields
+              const formData = new FormData(newForm)
+              formData.forEach((value, key) => {
+                if (key !== 'g-recaptcha-response' && key !== 'dolphin') {
+                  webflowData.fields[key] = value
+                }
+              })
+
+              // Submit as JSON
+              fetch(webflowEndpoint, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(webflowData)
+              })
+                .then((response) => {
+                  console.log('Webflow submission response:', response)
+
+                  if (response.ok || response.status === 200 || response.type === 'opaque') {
+                    // Show success message and hide form
+                    if (successDiv) {
+                      successDiv.style.display = 'block'
+                      newForm.style.display = 'none'
+                    }
+
+                    // Handle redirect if specified
+                    if (redirect && redirect.length > 0) {
+                      window.location.href = redirect
+                    }
+
+                    // Reset the form
+                    newForm.reset()
+                  } else {
+                    console.error('Error response from Webflow:', response)
+                    showError('Error submitting form. Please try again.')
+                  }
+                })
+                .catch((error) => {
+                  console.error('Error submitting to Webflow:', error)
+                  showError('Error submitting form. Please try again.')
+                })
+            } else {
+              // reCAPTCHA validation failed
+              console.error('reCAPTCHA validation failed:', data.message)
+              showError('Validation failed. Please try again or contact us directly.')
+            }
+          })
+          .catch((error) => {
+            console.error('Error during validation:', error)
+            submitButton.value = originalButtonText
+            submitButton.disabled = false
+            showError('An error occurred. Please try again later.')
+          })
+      })
+
+      return false
+    })
+
+    function showError(message) {
+      if (errorDiv) {
+        errorDiv.style.display = 'block'
+        const errorMessage = errorDiv.querySelector('div')
+        if (errorMessage) {
+          errorMessage.textContent = message
+        }
+      } else {
+        alert(message)
+      }
+
+      // Ensure success message is hidden
+      if (successDiv) {
+        successDiv.style.display = 'none'
+      }
+    }
+
+    // Add some basic CSS for error styling
+    const style = document.createElement('style')
+    style.textContent = `
+  .field-error {
+    border-color: red !important;
+    background-color: rgba(255, 0, 0, 0.05) !important;
+  }
+  .field-error-message {
+    color: red;
+    font-size: 12px;
+    margin-top: 5px;
+  }
+`
+    document.head.appendChild(style)
+  })
+</script>
