@@ -33,13 +33,91 @@
     const pageId = newForm.getAttribute('data-wf-page-id') || ''
     const elementId = newForm.getAttribute('data-wf-element-id') || ''
 
+    // ENHANCED ANTI-SPAM: Add honeypot field
+    const honeypotField = document.createElement('div')
+    honeypotField.style.opacity = '0'
+    honeypotField.style.position = 'absolute'
+    honeypotField.style.height = '0'
+    honeypotField.style.overflow = 'hidden'
+    honeypotField.style.zIndex = '-1'
+    honeypotField.innerHTML = `
+  <label for="website">Website</label>
+  <input type="text" id="website" name="website" autocomplete="off">
+`
+    newForm.appendChild(honeypotField)
+
     // Function to check for blocked email domains
     function isBlockedEmailDomain(email) {
-      const blockedDomains = ['.ru', '.store', '.xyz'] // Add any other domains you want to block
+      const blockedDomains = [
+        '.ru',
+        '.su',
+        '.by',
+        '.kz', // Russian and related domains
+        '.cn',
+        '.top',
+        '.xyz',
+        '.club',
+        '.site', // Common spam domains
+        '.pw',
+        '.tk',
+        '.ml',
+        '.ga',
+        '.cf', // Free domains often used for spam
+        '.bid',
+        '.loan',
+        '.work',
+        '.racing',
+        '.win' // More spam-prone domains
+      ]
       const lowerEmail = email.toLowerCase()
 
       return blockedDomains.some((domain) => lowerEmail.endsWith(domain))
     }
+
+    // Function to detect spam patterns in text
+    function containsSpamPatterns(text) {
+      if (!text) return false
+
+      const spamPatterns = [
+        /viagra/i,
+        /cialis/i,
+        /casino/i,
+        /porn/i,
+        /sex/i,
+        /\bloan\b/i,
+        /\bcash\b/i,
+        /\bmoney\b/i,
+        /\bfree\b.*\boffer\b/i,
+        /\bweight loss\b/i,
+        /\bdiet\b/i,
+        /\bbuy\b.*\bonline\b/i,
+        /\bclick here\b/i,
+        /\burl=/i,
+        /\bhref=/i,
+        /\bhttp:/i,
+        /\bhttps:/i,
+        /\[url\]/i,
+        /\[link\]/i,
+        /\bseo\b/i,
+        /\bcrypto/i,
+        /\bbitcoin\b/i
+      ]
+
+      return spamPatterns.some((pattern) => pattern.test(text))
+    }
+
+    // Function to check for bot behavior
+    function isBotBehavior() {
+      // Check if form was filled too quickly (less than 5 seconds)
+      const formLoadTime = window.formLoadTime || Date.now()
+      const submissionTime = Date.now()
+      const timeSpent = submissionTime - formLoadTime
+
+      return timeSpent < 5000 // Less than 5 seconds is suspicious
+    }
+
+    // Record form load time
+    window.formLoadTime = Date.now()
 
     // Add our custom submission handler
     newForm.addEventListener('submit', function (e) {
@@ -50,10 +128,34 @@
       if (successDiv) successDiv.style.display = 'none'
       if (errorDiv) errorDiv.style.display = 'none'
 
+      // HONEYPOT CHECK: If the honeypot field is filled, silently reject the submission
+      const honeypotValue = newForm.querySelector('#website')?.value
+      if (honeypotValue) {
+        console.log('Honeypot triggered - likely spam')
+        // Show success message to the bot but don't actually submit
+        if (successDiv) {
+          successDiv.style.display = 'block'
+          newForm.style.display = 'none'
+        }
+        return false
+      }
+
+      // BOT BEHAVIOR CHECK: If form was filled too quickly, likely a bot
+      if (isBotBehavior()) {
+        console.log('Bot behavior detected - form filled too quickly')
+        // Show success message to the bot but don't actually submit
+        if (successDiv) {
+          successDiv.style.display = 'block'
+          newForm.style.display = 'none'
+        }
+        return false
+      }
+
       // Validate all required fields
       const requiredFields = newForm.querySelectorAll('[required]')
       let hasEmptyFields = false
       let firstEmptyField = null
+      let containsSpam = false
 
       // Remove any existing error messages
       const existingErrorMessages = newForm.querySelectorAll('.field-error-message')
@@ -84,6 +186,32 @@
           // Store first empty field for focus
           if (!firstEmptyField) {
             firstEmptyField = field
+          }
+        }
+
+        // SPAM CONTENT CHECK: Check for spam patterns in text fields
+        if (field.value && (field.tagName === 'TEXTAREA' || field.type === 'text')) {
+          if (containsSpamPatterns(field.value)) {
+            containsSpam = true
+
+            // Add error styling
+            field.classList.add('field-error')
+
+            // Create error message
+            const errorMessage = document.createElement('div')
+            errorMessage.className = 'field-error-message'
+            errorMessage.textContent = 'Please remove promotional content'
+            errorMessage.style.color = 'red'
+            errorMessage.style.fontSize = '12px'
+            errorMessage.style.marginTop = '5px'
+
+            // Insert error message after the field
+            field.parentNode.insertBefore(errorMessage, field.nextSibling)
+
+            // Store first problematic field for focus
+            if (!firstEmptyField) {
+              firstEmptyField = field
+            }
           }
         }
 
@@ -148,8 +276,8 @@
       }
 
       // If validation fails, stop here
-      if (hasEmptyFields) {
-        showError('Please fill in all required fields correctly.')
+      if (hasEmptyFields || containsSpam) {
+        showError('Please correct the highlighted fields.')
         return false
       }
 
@@ -174,7 +302,10 @@
             const formData = new FormData(newForm)
             const formObject = {}
             formData.forEach((value, key) => {
-              formObject[key] = value
+              // Skip the honeypot field
+              if (key !== 'website') {
+                formObject[key] = value
+              }
             })
 
             // Add reCAPTCHA token
@@ -203,7 +334,9 @@
             submitButton.value = originalButtonText
             submitButton.disabled = false
 
-            if (data.success) {
+            // ENHANCED RECAPTCHA SCORE CHECK: Require a higher score
+            if (data.success && (!data.score || data.score >= 0.7)) {
+              // Require score of 0.7 or higher
               // reCAPTCHA validation passed - manually submit to Webflow
               console.log('reCAPTCHA validation successful, submitting to Webflow')
 
@@ -227,7 +360,8 @@
               // Add form fields
               const formData = new FormData(newForm)
               formData.forEach((value, key) => {
-                if (key !== 'g-recaptcha-response' && key !== 'dolphin') {
+                // Skip the honeypot field and system fields
+                if (key !== 'website' && key !== 'g-recaptcha-response' && key !== 'dolphin') {
                   webflowData.fields[key] = value
                 }
               })
@@ -267,9 +401,9 @@
                   showError('Error submitting form. Please try again.')
                 })
             } else {
-              // reCAPTCHA validation failed
-              console.error('reCAPTCHA validation failed:', data.message)
-              showError('Validation failed. Please try again or contact us directly.')
+              // reCAPTCHA validation failed or score too low
+              console.error('reCAPTCHA validation failed or score too low:', data)
+              showError('Our system detected unusual activity. Please try again later or contact us directly.')
             }
           })
           .catch((error) => {
