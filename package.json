@@ -5,9 +5,6 @@
   "repository": "https://github.com/ekobayu/nodejs-recaptchaV3.git",
   "author": "Eko Bayu <eko.bayu@ogilvy.com>",
   "license": "MIT",
-  "scripts": {
-    "start": "node index.js"
-  },
   "dependencies": {
     "axios": "^1.8.4",
     "express": "^5.1.0"
