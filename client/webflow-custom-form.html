@@ -33,6 +33,14 @@
     const pageId = newForm.getAttribute('data-wf-page-id') || ''
     const elementId = newForm.getAttribute('data-wf-element-id') || ''
 
+    // Function to check for blocked email domains
+    function isBlockedEmailDomain(email) {
+      const blockedDomains = ['.ru', '.store', '.xyz'] // Add any other domains you want to block
+      const lowerEmail = email.toLowerCase()
+
+      return blockedDomains.some((domain) => lowerEmail.endsWith(domain))
+    }
+
     // Add our custom submission handler
     newForm.addEventListener('submit', function (e) {
       // Always prevent default submission
@@ -81,8 +89,11 @@
 
         // Email validation for email fields
         if (field.type === 'email' && field.value.trim()) {
+          const emailValue = field.value.trim()
           const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-          if (!emailRegex.test(field.value.trim())) {
+
+          // First check if it's a valid email format
+          if (!emailRegex.test(emailValue)) {
             hasEmptyFields = true
 
             // Add error styling
@@ -92,6 +103,29 @@
             const errorMessage = document.createElement('div')
             errorMessage.className = 'field-error-message'
             errorMessage.textContent = 'Please enter a valid email address'
+            errorMessage.style.color = 'red'
+            errorMessage.style.fontSize = '12px'
+            errorMessage.style.marginTop = '5px'
+
+            // Insert error message after the field
+            field.parentNode.insertBefore(errorMessage, field.nextSibling)
+
+            // Store first empty field for focus
+            if (!firstEmptyField) {
+              firstEmptyField = field
+            }
+          }
+          // Then check if it's a blocked domain
+          else if (isBlockedEmailDomain(emailValue)) {
+            hasEmptyFields = true
+
+            // Add error styling
+            field.classList.add('field-error')
+
+            // Create error message
+            const errorMessage = document.createElement('div')
+            errorMessage.className = 'field-error-message'
+            errorMessage.textContent = 'This email domain is not supported'
             errorMessage.style.color = 'red'
             errorMessage.style.fontSize = '12px'
             errorMessage.style.marginTop = '5px'
