@@ -75,7 +75,7 @@ module.exports = async (req, res) => {
     const { success, score } = recaptchaResponse.data
 
     // Check if verification was successful and score is acceptable
-    if (!success || score < 0.8) {
+    if (!success || score <= 0.8) {
       return res.status(400).json({
         success: false,
         message: 'reCAPTCHA verification failed',
