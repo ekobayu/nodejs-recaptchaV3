@@ -75,20 +75,21 @@ module.exports = async (req, res) => {
     const { success, score } = recaptchaResponse.data
 
     // Check if verification was successful and score is acceptable
-    if (!success || score <= 0.7) {
+    if (success && score >= 0.7) {
+      // Return success response
+      return res.status(200).json({
+        success: true,
+        message: 'reCAPTCHA validation successful',
+        score: score
+      })
+    } else {
+      // Return false response
       return res.status(400).json({
         success: false,
         message: 'reCAPTCHA verification failed',
         recaptchaResponse: recaptchaResponse.data
       })
     }
-
-    // Return success response
-    return res.status(200).json({
-      success: true,
-      message: 'reCAPTCHA validation successful',
-      score: score
-    })
   } catch (error) {
     console.error('Error validating reCAPTCHA:', error)
     return res.status(500).json({
